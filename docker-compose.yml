@@ -21,6 +21,9 @@
 
 services:
   azure-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.http
     image: azure-mcp-server-http:local
     container_name: azure-mcp-server
     ports:
@@ -32,19 +35,12 @@ services:
       - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
       - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID:-}
       # HTTP transport configuration
-      - ASPNETCORE_URLS=http://+:8080
+      - ASPNETCORE_URLS=http://0.0.0.0:8080
       - ASPNETCORE_ENVIRONMENT=Production
       # Required for wildcard binding with auth disabled
       - ALLOW_INSECURE_EXTERNAL_BINDING=true
     env_file:
       - .env
-    # HTTP/SSE transport with namespace mode (auth disabled for local dev)
-    # Remove --dangerously-disable-http-incoming-auth for production
-    command: ["--transport", "http", "--dangerously-disable-http-incoming-auth", "--mode", "${MCP_MODE:-namespace}"]
+    # The Dockerfile.http ENTRYPOINT already includes the server start command
+    # with --transport http --dangerously-disable-http-incoming-auth --mode namespace
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/sse"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
