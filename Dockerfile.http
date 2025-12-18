@@ -18,17 +18,24 @@ COPY core/ core/
 COPY servers/Azure.Mcp.Server/ servers/Azure.Mcp.Server/
 COPY tools/ tools/
 
-# Restore and publish (PublishTrimmed=false enables ENABLE_HTTP)
+# Restore and publish with HTTP support enabled
+# When PublishTrimmed=false and BuildNative is not set, ENABLE_HTTP is defined in Directory.Build.props
 RUN dotnet publish servers/Azure.Mcp.Server/src/Azure.Mcp.Server.csproj \
     -c Release \
     -o /app/publish \
     /p:PublishTrimmed=false \
     /p:PublishSingleFile=false
 
+# Verify HTTP support is compiled in by checking for CreateHttpHost method in Azure.Mcp.Core.dll
+RUN strings /app/publish/Azure.Mcp.Core.dll | grep -q "CreateHttpHost" && echo "HTTP transport support verified in binary" || (echo "ERROR: HTTP transport NOT found in binary" && exit 1)
+
 # Runtime stage - MUST use aspnet:9.0 to match net9.0 target framework
 FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine AS runtime
 
 WORKDIR /app
+
+# Install curl for health checks
+RUN apk add --no-cache curl
 
 # Copy published output
 COPY --from=build /app/publish .
@@ -37,10 +44,15 @@ COPY --from=build /app/publish .
 EXPOSE 8080
 
 # Set environment variables for HTTP transport
-ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+ENV ALLOW_INSECURE_EXTERNAL_BINDING=true
 
-# Use dotnet to run the DLL with HTTP transport enabled
-# All arguments in ENTRYPOINT to ensure HTTP transport is always used
-ENTRYPOINT ["dotnet", "azmcp.dll", "server", "start", "--transport", "http", "--dangerously-disable-http-incoming-auth"]
-CMD ["--mode", "namespace"]
+# Health check
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/sse -o /dev/null -w "%{http_code}" --max-time 2 | grep -q "200" || exit 1
+
+# Run using dotnet runtime with the DLL (aspnet image has runtime, not SDK)
+# Similar to: ASPNETCORE_URLS="http://+:8080" dotnet azmcp.dll server start --transport http ...
+ENTRYPOINT ["dotnet", "azmcp.dll", "server", "start", "--transport", "http", "--dangerously-disable-http-incoming-auth", "--mode", "namespace"]
