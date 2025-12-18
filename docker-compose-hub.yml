@@ -1,0 +1,43 @@
+# Docker Compose configuration for Azure MCP Server with HTTP/SSE transport
+# Uses pre-built image from Docker Hub
+# 
+# Usage:
+#   1. Create a .env file with your Azure credentials:
+#      AZURE_TENANT_ID=your-tenant-id
+#      AZURE_CLIENT_ID=your-client-id  
+#      AZURE_CLIENT_SECRET=your-client-secret
+#      AZURE_SUBSCRIPTION_ID=your-subscription-id
+#
+#   2. Run:
+#      docker compose -f docker-compose-hub.yml up
+#
+# HTTP/SSE Endpoints:
+#   GET  /sse                    - Establish SSE connection (returns sessionId)
+#   POST /message?sessionId=xxx  - Send MCP JSON-RPC messages
+#
+# Server Modes:
+#   namespace (default) - Groups tools by Azure service namespace
+#   single              - Single "azure" tool with internal routing
+
+services:
+  azure-mcp-server:
+    image: kingtest12132/azure-mcp-server-http:local
+    container_name: azure-mcp-server
+    ports:
+      - "8080:8080"
+    environment:
+      # Azure Service Principal authentication
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID:-}
+      # HTTP transport configuration
+      - ASPNETCORE_URLS=http://0.0.0.0:8080
+      - ASPNETCORE_ENVIRONMENT=Production
+      # Required for wildcard binding with auth disabled
+      - ALLOW_INSECURE_EXTERNAL_BINDING=true
+    env_file:
+      - .env
+    # The image ENTRYPOINT already includes the server start command
+    # with --transport http --dangerously-disable-http-incoming-auth --mode namespace
+    restart: unless-stopped
