@@ -2,6 +2,7 @@
 .proxy/
 .dist/
 .work/
+.vibering/
 tests/test-cmds.txt
 .testsettings.json
 
