@@ -1,0 +1,46 @@
+# Multi-stage Dockerfile for Azure MCP Server with HTTP transport support
+# Based on the original Dockerfile but includes build stage for HTTP support
+
+# Build stage - compile with HTTP support enabled
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+
+WORKDIR /src
+
+# Copy solution and project files
+COPY *.sln ./
+COPY Directory.Build.props ./
+COPY Directory.Packages.props ./
+COPY global.json ./
+COPY nuget.config ./
+
+# Copy source code
+COPY core/ core/
+COPY servers/Azure.Mcp.Server/ servers/Azure.Mcp.Server/
+COPY tools/ tools/
+
+# Restore and publish (PublishTrimmed=false enables ENABLE_HTTP)
+RUN dotnet publish servers/Azure.Mcp.Server/src/Azure.Mcp.Server.csproj \
+    -c Release \
+    -o /app/publish \
+    /p:PublishTrimmed=false \
+    /p:PublishSingleFile=false
+
+# Runtime stage - MUST use aspnet:9.0 to match net9.0 target framework
+FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine AS runtime
+
+WORKDIR /app
+
+# Copy published output
+COPY --from=build /app/publish .
+
+# Expose HTTP port
+EXPOSE 8080
+
+# Set environment variables for HTTP transport
+ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_ENVIRONMENT=Production
+
+# Use dotnet to run the DLL with HTTP transport enabled
+# All arguments in ENTRYPOINT to ensure HTTP transport is always used
+ENTRYPOINT ["dotnet", "azmcp.dll", "server", "start", "--transport", "http", "--dangerously-disable-http-incoming-auth"]
+CMD ["--mode", "namespace"]
